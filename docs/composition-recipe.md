@@ -5,7 +5,7 @@ your app adds modules via `metaphor add module`. The skeleton stays generic; the
 reference.
 
 - **Recipe A — payment + payment-gateway + billing** (next): the event-seam ACLs for the payment stack.
-- **Recipe B — billing → tax audit mirror** (end of file): drain billing's outbox into tax's `TaxTransaction` + e-Faktur.
+- **Recipe B — billing → tax audit mirror** (end of file): RETIRED — kept as the record of the removed composition.
 
 ## Recipe A — payment + payment-gateway + billing
 
@@ -134,78 +134,15 @@ let app = Router::new()
 
 ---
 
-## Recipe B — billing → tax audit mirror
+## Recipe B — billing → tax audit mirror (retired)
 
-The tax module records a `TaxTransaction` (+ a gapless e-Faktur number for sales) for every posted
-billing invoice, and voids it on cancellation. **Tax does not self-populate** — billing stages
-`SalesInvoicePosted` / `PurchaseInvoicePosted` / `InvoiceCancelled` into `billing.outbox_events`, and
-the host app drains that outbox into tax via the `backbone-billing-tax` dispatcher. Copy this recipe
-when your app uses the tax module alongside billing.
+This app previously recorded a tax `TaxTransaction` (+ a gapless e-Faktur number for sales) for every
+posted billing invoice by draining `billing.outbox_events` through the `backbone-billing-tax`
+dispatcher crate. That composition has been removed: the crate is retired, and the app no longer
+depends on `backbone-tax` or (transitively) `backbone-billing`.
 
-> **Why a separate `backbone-billing-tax` crate** (not code inside `backbone-billing` or `backbone-tax`)?
-> The routing needs types from *both* modules (billing's events + tax's `record_tax_transaction`), so
-> whoever hosts it depends on both. A backbone module keeps zero cargo edges to siblings, so the bridge
-> can't live in either module — it's a composition-layer concern (type `crate`, not `module`). This is
-> the only place the two bounded contexts meet.
-
-### Step 1 — add the deps
-
-```toml
-# Cargo.toml [dependencies]
-backbone-tax         = { path = "../backbone-tax" }
-backbone-billing     = { path = "../backbone-billing" }       # the producer (stages outbox events)
-backbone-billing-tax = { path = "../backbone-billing-tax" }   # the dispatcher (drains outbox → tax)
-```
-
-### Step 2 — wire `main.rs` (after the DB + the outbox relay block)
-
-```rust
-// Tax audit mirror: drain billing.outbox_events → tax.record_tax_transaction / void_for_invoice.
-let tax = backbone_tax::TaxModule::builder()
-    .with_database(database.pool().clone())
-    .build()?;
-backbone_outbox::outbox::migrate(database.pool(), "billing").await?;
-let dispatcher_pool = database.pool().clone();
-let dispatcher_efaktur = tax.efaktur_service.clone();
-tokio::spawn(backbone_billing_tax::run_dispatcher(
-    dispatcher_pool,
-    "billing",
-    dispatcher_efaktur,
-    async { let _ = tokio::signal::ctrl_c().await; },
-));
-```
-
-### ⚠️ The double-drain guard
-
-`backbone-application` already runs an outbox relay that drains `database.outbox_schemas` onto its
-integration bus. **`"billing"` must NOT be in `outbox_schemas`** — that schema is drained by the
-dispatcher above. If both drain `billing.outbox_events`, they race on the same rows. Keep the bus relay
-for the other schemas; the dispatcher owns billing.
-
-### What it does (so you know what to expect)
-
-- `SalesInvoicePosted` → records a `TaxTransaction` + assigns a gapless `010.NNN-NN.YYYYYYYY` e-Faktur.
-- `PurchaseInvoicePosted` → records a `TaxTransaction` (no e-Faktur; only sales are numbered).
-- `InvoiceCancelled` (credit note) → flips the e-Faktur to **Voided** (DJP sequence preserved, never reused).
-- All paths idempotent — the outbox delivers at-least-once; tax's unique `(company, invoice_ref, kind)`
-  fence makes a redelivery a no-op.
-
-### The producer side — billing must stage events
-
-The dispatcher only drains what billing stages. Construct the billing writer with the outbox schema, or
-its events never reach tax:
-
-```rust
-let billing = backbone_billing::application::service::billing_write_service::BillingWriteService
-    ::new(pool.clone()).with_outbox_schema("billing");
-```
-
-### Test it
-
-```bash
-cargo test -p backbone-billing-tax --test dispatcher_seam
-# outbox_drain_routes_posted_invoice_to_tax + outbox_drain_voids_efaktur_on_invoice_cancelled
-```
-
-Requires `DATABASE_URL` (:5433) with `tax` + `billing` schemas migrated.
+The outbox relay in `src/main.rs` remains the app's single drain mechanism. An app that needs billing
+events consumed should list `"billing"` in `database.outbox_schemas` and register a domain handler on
+the integration bus — the same mechanism every other producer schema uses — rather than reviving a
+dedicated dispatcher crate.
 

@@ -39,8 +39,8 @@ The app's tenant boundary is **Postgres Row-Level Security** plus a **verified J
 
 ## Startup DDL runs on an owner pool (`ADMIN_DATABASE_URL`)
 
-The billing→tax dispatcher's `outbox::migrate` (and the module `MigrationManager`, and the per-schema
-outbox migrates) do **owner-level DDL** — `CREATE SCHEMA`/`TABLE` and `ENABLE`/`FORCE ROW LEVEL
+The module `MigrationManager` and the per-schema outbox migrates do **owner-level DDL** —
+`CREATE SCHEMA`/`TABLE` and `ENABLE`/`FORCE ROW LEVEL
 SECURITY` + `CREATE POLICY`, which require the table owner and cannot be granted to a non-owner role.
 So the app runs all startup schema-DDL on a separate **admin/owner pool** sourced from
 `ADMIN_DATABASE_URL`; the runtime `DATABASE_URL` (the `metaphor_app` role) is used only for fenced

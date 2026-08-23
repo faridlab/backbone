@@ -225,24 +225,6 @@ async fn main() -> Result<()> {
         tracing::warn!("outbox_schemas configured but database.relay_url is empty — no relay started");
     }
 
-    // Billing→tax audit-mirror dispatcher (a sibling of the outbox relay above). Drains
-    // billing.outbox_events → tax.record_tax_transaction / void_for_invoice.
-    // NOTE: "billing" must NOT be in database.outbox_schemas — that schema is drained HERE, not by
-    // the bus relay above, or the two double-drain the same rows.
-    let tax_module = backbone_tax::TaxModule::builder()
-        .with_database(database.pool().clone())
-        .build()?;
-    backbone_outbox::outbox::migrate(ddl_pool, "billing").await?;
-    let dispatcher_pool = database.pool().clone();
-    let dispatcher_efaktur = tax_module.efaktur_service.clone();
-    tokio::spawn(backbone_billing_tax::run_dispatcher(
-        dispatcher_pool,
-        "billing",
-        dispatcher_efaktur,
-        async { let _ = tokio::signal::ctrl_c().await; },
-    ));
-    info!("✅ billing→tax dispatcher started (draining billing.outbox_events)");
-
     // backbone-asset — the fixed-asset register. Its lifecycle (register/activate/depreciate/dispose) is
     // the only path that may change financial state, and it posts through a REAL GlPostSink into
     // backbone-accounting's ledger (the financial tables are read-only by default via all_crud_routes).
