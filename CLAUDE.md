@@ -55,6 +55,7 @@ cargo run -- healthcheck                  # probe /health (used by Docker HEALTH
 - **SHOULD** expose `/health`, `/readyz`, `/metrics` (Prometheus) and structured JSON logs. The skeleton wires `/health` plus a maintenance gate (`/maintenance/status`, `POST /maintenance`) out of the box.
 - **SHOULD** feature-gate optional transports (`grpc`, `graphql`) when the module supports them.
 - **MUST** read and follow the target repo's own `CLAUDE.md` when working across repos — before editing in another repo, read its rules; the more local `CLAUDE.md` always wins.
+- **MUST** run the workspace's chaos gate after business-flow-level changes here (new/changed flow, cross-module seam, new external dependency, tenancy/RLS/auth, runtime infra) — see the workspace's `docs/chaos/README.md` if it defines one. Typos, cosmetics, docs-only, tests-only, and behavior-identical refactors are exempt.
 
 ## Folder cheatsheet
 
@@ -133,20 +134,10 @@ Both files are validated by [`scripts/preflight-prod.sh`](scripts/preflight-prod
 ## Deeper knowledge (load on demand)
 
 - Skill: `backbone-cli-master` — Backbone CLI surface + workflows.
-- Skill: `backbone-modules-orchestrator` — composing modules into a service.
-- Skill: `backbone-framework-architect` — framework crate layering.
+- Skill: `modules-orchestrator` — composing modules into a service.
+- Skill: `framework-architect` — framework crate layering.
 - Skill: `api-and-interface-design` — REST/gRPC/GraphQL surface shape.
 - Skill: `security-and-hardening` — authz, input validation, secret handling.
-
-## Behavioural guidelines (summary)
-
-Full rules: [`docs/architecture/ai-guidelines.md`](docs/architecture/ai-guidelines.md).
-
-1. **Think before coding** — surface assumptions, present alternatives, ask when unclear.
-2. **Simplicity first** — minimum code that solves the problem; no speculative abstractions.
-3. **Surgical changes** — touch only what the request demands; match existing style; clean up only orphans your changes created.
-4. **Goal-driven execution** — define verifiable success criteria; verify before claiming done.
-5. **File granularity** — split any file > 500 lines along a real seam (responsibility / sub-module / entity); never `_part2.rs`-style splits.
 
 ## Regen safety
 
